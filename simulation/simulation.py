@@ -111,7 +111,6 @@ class Car:
         self.speed = 60.0
         self.waypoints = []
         self.waypoints.append(Waypoint(time.time(), self.lat, self.long))
-
         newtime = time.time() + (self.distance_to(self.destX, self.destY) / self.speed)
         self.waypoints.append(Waypoint(newtime, self.destX, self.destY))
         self.state = "Roaming"
