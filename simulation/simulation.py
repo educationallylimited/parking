@@ -78,9 +78,13 @@ class SimManager:
                     w.create_rectangle(lotlat, lotlong, lotlat + 20, lotlong + 20, width=0, fill="green")
 
                 for car in self.cars:
+                    if car.state == "Roaming":
+                        colour = "blue"
+                    else:
+                        colour = "red"
                     if car.drawing:
                         dotlat, dotlong = car.get_position(now)
-                        w.create_oval(dotlat, dotlong, dotlat + 5, dotlong + 5, width=0, fill='blue')
+                        w.create_oval(dotlat, dotlong, dotlat + 5, dotlong + 5, width=0, fill=colour)
                 root.update()
                 yield from asyncio.sleep(interval)
         except tk.TclError as e:
@@ -99,14 +103,18 @@ class Car:
     def __init__(self, lat, long):
         self.lat = lat
         self.long = long
-        self.destX = 0
-        self.destY = 0
+        self.destX = 200.0
+        self.destY = 200.0
         self.aDestX = 0
         self.aDestY = 0
-        self.drawing = False
-        self.speed = 60
+        self.drawing = True
+        self.speed = 60.0
         self.waypoints = []
         self.waypoints.append(Waypoint(time.time(), self.lat, self.long))
+
+        newtime = time.time() + (self.distance_to(self.destX, self.destY) / self.speed)
+        self.waypoints.append(Waypoint(newtime, self.destX, self.destY))
+        self.state = "Roaming"
 
     def get_location(self):
         # TODO update to use waypoints
@@ -116,16 +124,17 @@ class Car:
         return math.sqrt((self.lat - x)**2 + (self.long - y)**2)
 
     def get_position(self, now):
-        if len(self.waypoints) > 1:
-            latdiff = self.waypoints[-1].lat - self.waypoints[-2].lat
-            longdiff = self.waypoints[-1].long - self.waypoints[-2].long
-            timediff = self.waypoints[-1].time - self.waypoints[-2].time
-            progress = (now - self.waypoints[-1].time) / timediff
-            poslat = self.waypoints[-2].lat + (latdiff * progress)
-            poslong = self.waypoints[-2].long + (longdiff * progress)
-            return poslat, poslong
-        else:
-            return self.lat, self.long
+        latdiff = self.waypoints[-1].lat - self.waypoints[-2].lat
+        longdiff = self.waypoints[-1].long - self.waypoints[-2].long
+        timediff = self.waypoints[-1].time - self.waypoints[-2].time
+        progress = (now - self.waypoints[-2].time) / timediff
+        progress = min(progress, 1)
+        poslat = self.waypoints[-2].lat + (latdiff * progress)
+        poslong = self.waypoints[-2].long + (longdiff * progress)
+        self.lat = poslat
+        self.long = poslong
+        return poslat, poslong
+
 
     def set_initial_destination(self, x, y):
         self.destX = x
@@ -141,6 +150,8 @@ class Car:
     def set_allocated_destination(self, x, y):
         self.aDestX = x
         self.aDestY = y
+        lat, long = self.get_position(time.time())
+        self.waypoints.append(Waypoint(time.time(), lat, long))
         newtime = time.time() + (self.distance_to(x, y) / self.speed)
         self.waypoints.append(Waypoint(newtime, x, y))
 
@@ -249,8 +260,13 @@ async def car_routine(startt, startx, starty, manager):
     car = Car(startx, starty)
     manager.cars.append(car)
 
+    print(str(car.waypoints[-2].time), str(car.waypoints[-2].lat), str(car.waypoints[-2].long))
+    print(str(car.waypoints[-1].time), str(car.waypoints[-1].lat), str(car.waypoints[-1].long))
+
+    await asyncio.sleep(10)
+    car.state = "Searching"
+
     async with websockets.connect('ws://localhost:8765') as websocket:
-        car.drawing = True
 
         # Request a parking space
         x, y = car.get_initial_destination()
@@ -263,6 +279,9 @@ async def car_routine(startt, startx, starty, manager):
         lotdict = spacedict['lot']
         locdict = lotdict['location']
         car.set_allocated_destination(locdict['longitude'], locdict['latitude'])
+
+        print(str(car.waypoints[-2].time), str(car.waypoints[-2].lat), str(car.waypoints[-2].long))
+        print(str(car.waypoints[-1].time), str(car.waypoints[-1].lat), str(car.waypoints[-1].long))
 
         while True:
             # Send the location of the car at time intervals

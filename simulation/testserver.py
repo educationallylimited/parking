@@ -13,7 +13,7 @@ async def hello(websocket, path):
 
     # send an allocation
     message = serialize_model(wsmodels.ParkingAllocationMessage(
-        wsmodels.ParkingLot(1, "x", 1.0, wsmodels.Location(200.0, 300.0))))
+        wsmodels.ParkingLot(1, "x", 1.0, wsmodels.Location(500.0, 500.0))))
     await websocket.send(message)
 
     while True:
