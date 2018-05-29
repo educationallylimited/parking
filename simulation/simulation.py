@@ -66,13 +66,22 @@ class SimManager:
                 w.delete("all")
                 now = time.time()
                 for simlot in self.lots:
+                    centering = (10 + (simlot.available / 2) / 2)
                     lotlat, lotlong = simlot.lot.location.latitude, simlot.lot.location.longitude
-                    w.create_rectangle(lotlat, lotlong, lotlat + 20, lotlong + 20, width=0, fill="green")
+                    w.create_rectangle(lotlat - centering, lotlong - centering, lotlat + centering, lotlong + centering,
+                                       width=0,
+                                       fill="green")
 
                 for car in self.cars:
+                    if car.state == "Roaming":
+                        colour = "blue"
+                    elif car.state == "Searching":
+                        colour = "red"
+                    else:
+                        colour = "black"
                     if car.drawing:
                         dotlat, dotlong = car.get_position(now)
-                        w.create_oval(dotlat, dotlong, dotlat + 5, dotlong + 5, width=0, fill='blue')
+                        w.create_oval(dotlat - 2.5, dotlong - 2.5, dotlat + 2.5, dotlong + 2.5, width=0, fill=colour)
                 root.update()
                 await asyncio.sleep(interval)
                 if self.stop_flag:
@@ -106,43 +115,63 @@ class Car:
     def __init__(self, lat, long):
         self.lat = lat
         self.long = long
-        self.destX = 0
-        self.destY = 0
+        self.destX = 200
+        self.destY = 300
         self.aDestX = 0
         self.aDestY = 0
         self.drawing = False
         self.speed = 60
         self.waypoints = []
         self.waypoints.append(Waypoint(time.time(), self.lat, self.long))
+        newtime = time.time() + (self.distance_to(self.destX, self.destY) / self.speed)
+        self.waypoints.append(Waypoint(newtime, self.destX, self.destY))
+        self.state = "Roaming"
 
     def distance_to(self, x, y):
         return math.sqrt((self.lat - x)**2 + (self.long - y)**2)
 
     def get_position(self, now):
-        if len(self.waypoints) > 1:
+        if len(self.waypoints) != 2:
             latdiff = self.waypoints[-1].lat - self.waypoints[-2].lat
             longdiff = self.waypoints[-1].long - self.waypoints[-2].long
             timediff = self.waypoints[-1].time - self.waypoints[-2].time
-            progress = (now - self.waypoints[-1].time) / timediff
-            poslat = self.waypoints[-2].lat + (latdiff * progress)
-            poslong = self.waypoints[-2].long + (longdiff * progress)
+            progress = (now - self.waypoints[-2].time) / timediff
+            progress_limit = min(progress, 1)
+
+            if progress_limit == 1:
+                self.state = "Parked"
+                self.finish = time.time()
+
+            poslat = self.waypoints[-2].lat + (latdiff * progress_limit)
+            poslong = self.waypoints[-2].long + (longdiff * progress_limit)
+            self.lat = poslat
+            self.long = poslong
             return poslat, poslong
         else:
-            return self.lat, self.long
+            latdiff = self.waypoints[-1].lat - self.waypoints[-2].lat
+            longdiff = self.waypoints[-1].long - self.waypoints[-2].long
+            timediff = self.waypoints[-1].time - self.waypoints[-2].time
+            progress = (now - self.waypoints[-2].time) / timediff
+            poslat = self.waypoints[-2].lat + (latdiff * progress)
+            poslong = self.waypoints[-2].long + (longdiff * progress)
+            self.lat = poslat
+            self.long = poslong
+            return poslat, poslong
 
     def set_initial_destination(self, x, y):
         self.destX = x
         self.destY = y
-        # for the moment, assuming no congestion and constant speed, we can calculate the arrival time
-        # however might need to pass it in when things get more complicated
         newtime = time.time() + (self.distance_to(x, y) / self.speed)
         self.waypoints.append(Waypoint(newtime, x, y))
 
     def set_allocated_destination(self, x, y):
         self.aDestX = x
         self.aDestY = y
+        lat, long = self.get_position(time.time())
+        self.waypoints.append(Waypoint(time.time(), lat, long))
         newtime = time.time() + (self.distance_to(x, y) / self.speed)
         self.waypoints.append(Waypoint(newtime, x, y))
+        self.state = "Searching"
 
 
 class ParkingLot:
@@ -220,6 +249,8 @@ async def car_routine(startt, startx, starty, manager):
     await cli.send_parking_request(wsmodels.Location(float(x), float(y)), {})
     car.drawing = True
 
+    await asyncio.sleep(7)
+
     # Receive the parking allocation information
     space = await cli.receive(wsmodels.ParkingAllocationMessage)
     car.set_allocated_destination(space.lot.location.longitude, space.lot.location.latitude)
@@ -239,6 +270,11 @@ async def car_routine(startt, startx, starty, manager):
         x, y = car.get_position(time.time())
         await cli.send_location(wsmodels.Location(float(x), float(y)))
 
+        if car.state == "Parked":
+            await asyncio.sleep(5)
+            car.drawing = False
+            break
+
 
 async def space_routine(startt, lat, long, capacity, name, price, available, manager):
     await asyncio.sleep(startt)
@@ -256,10 +292,10 @@ async def space_routine(startt, lat, long, capacity, name, price, available, man
     await simlot.change_price(1.0)
 
 if __name__ == '__main__':
-    sim = SimManager(2000, 20, 70, 50, 1000, 1000, 2, 4, 100)
+    sim = SimManager(1500, 20, 70, 50, 1000, 1000, 0, 4, 100)
     asyncio.ensure_future(sim.run())
     #stop simulation after 10 seconds
-    asyncio.ensure_future(sim.stop(10))
+    asyncio.ensure_future(sim.stop(100))
     asyncio.get_event_loop().run_forever()
     #can access sim variables here for tests
 
