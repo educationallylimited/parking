@@ -131,32 +131,25 @@ class Car:
         return math.sqrt((self.lat - x)**2 + (self.long - y)**2)
 
     def get_position(self, now):
-        if len(self.waypoints) != 2:
-            latdiff = self.waypoints[-1].lat - self.waypoints[-2].lat
-            longdiff = self.waypoints[-1].long - self.waypoints[-2].long
-            timediff = self.waypoints[-1].time - self.waypoints[-2].time
-            progress = (now - self.waypoints[-2].time) / timediff
-            progress_limit = min(progress, 1)
+        latdiff = self.waypoints[-1].lat - self.waypoints[-2].lat
+        longdiff = self.waypoints[-1].long - self.waypoints[-2].long
+        timediff = self.waypoints[-1].time - self.waypoints[-2].time
+        progress = (now - self.waypoints[-2].time) / timediff
+        progress_limit = min(progress, 1)
 
+        if len(self.waypoints) != 2:
             if progress_limit == 1:
                 self.state = "Parked"
                 self.finish = time.time()
 
-            poslat = self.waypoints[-2].lat + (latdiff * progress_limit)
-            poslong = self.waypoints[-2].long + (longdiff * progress_limit)
-            self.lat = poslat
-            self.long = poslong
-            return poslat, poslong
         else:
-            latdiff = self.waypoints[-1].lat - self.waypoints[-2].lat
-            longdiff = self.waypoints[-1].long - self.waypoints[-2].long
-            timediff = self.waypoints[-1].time - self.waypoints[-2].time
-            progress = (now - self.waypoints[-2].time) / timediff
-            poslat = self.waypoints[-2].lat + (latdiff * progress)
-            poslong = self.waypoints[-2].long + (longdiff * progress)
-            self.lat = poslat
-            self.long = poslong
-            return poslat, poslong
+            progress_limit = progress
+
+        poslat = self.waypoints[-2].lat + (latdiff * progress_limit)
+        poslong = self.waypoints[-2].long + (longdiff * progress_limit)
+        self.lat = poslat
+        self.long = poslong
+        return poslat, poslong
 
     def set_initial_destination(self, x, y):
         self.destX = x
