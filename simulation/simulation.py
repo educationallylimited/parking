@@ -6,6 +6,7 @@ from tornado import httpclient
 from concurrent import futures
 import logging
 from geopy.distance import vincenty
+import math
 
 from uuid import uuid4
 
@@ -96,14 +97,25 @@ class SimManager:
             while not self.stop_flag:
                 w.delete("all")
                 now = time.time()
+                if len(self.cars) > 0:
+                    w.create_rectangle(500, 250, 500 + 15, 250 +15, width=0,
+                                       fill="red")
                 for simlot in self.lots:
+                    centering = (5+(simlot.available)/2)
                     x, y = self.loc_to_point(simlot.lot.location)
-                    w.create_rectangle(x, y, x + (simlot.available*4), y + (simlot.available*4), width=0, fill="green")
+                    w.create_rectangle(x - centering, y - centering, x + centering, y + centering, width=0, fill="green")
 
                 for car in self.cars:
+                    if car.state == "Roaming":
+                        colour = "blue"
+                    elif car.state == "Searching":
+                        colour = "red"
+                    else:
+                        colour = "cyan"
+
                     if car.drawing:
                         x, y = self.loc_to_point(wsmodels.Location(*car.get_position(now)))
-                        w.create_oval(x, y, x + 5, y + 5, width=0, fill='blue')
+                        w.create_oval(x - 2.5, y - 2.5, x + 2.5, y + 2.5, width=0, fill=colour)
 
                 for rogue in self.rogues:
                     if rogue.drawing:
@@ -280,42 +292,54 @@ class Car:
         self.destY = 0
         self.aDestX = 0
         self.aDestY = 0
-        self.drawing = False
+        self.drawing = True
         self.speed = 60  # this is in ms^-1
         self.waypoints = []
         self.waypoints.append(Waypoint(time.time(), self.lat, self.long))
+
+        newtime = time.time() + (self.distance_to(self.destX,self.destY,time.time()) / self.speed)
+        self.waypoints.append(Waypoint(newtime,self.destX,self.destY))
+        self.state = "Roaming"
+
         self.manager = manager
         self.cli = cli
 
     def distance_to(self, x, y, now):
-        lat, long = self.get_position(now)
-        return geodistance(x, y, lat, long)
+        if len(self.waypoints) > 1:
+            lat, long = self.get_position(now)
+            return geodistance(x, y, lat, long)
+        else:
+            return geodistance(x, y, self.lat, self.long)
 
     def get_position(self, now):
-        if len(self.waypoints) > 1:
-            latdiff = self.waypoints[-1].lat - self.waypoints[-2].lat
-            longdiff = self.waypoints[-1].long - self.waypoints[-2].long
-            timediff = self.waypoints[-1].time - self.waypoints[-2].time
-            progress = (now - self.waypoints[-2].time) / timediff
-            poslat = self.waypoints[-2].lat + (latdiff * progress)
-            poslong = self.waypoints[-2].long + (longdiff * progress)
-            return poslat, poslong
+        latdiff = self.waypoints[-1].lat - self.waypoints[-2].lat
+        longdiff = self.waypoints[-1].long - self.waypoints[-2].long
+        timediff = self.waypoints[-1].time - self.waypoints[-2].time
+        progress = (now - self.waypoints[-2].time) / timediff
+        progress_limit = min(progress,1)
+
+        if len(self.waypoints) != 2:
+            if progress_limit == 1:
+                self.state = "Parked"
+
         else:
-            return self.lat, self.long
+            progress_limit = progress
+
+        poslat = self.waypoints[-2].lat + (latdiff * progress_limit)
+        poslong = self.waypoints[-2].long + (longdiff * progress_limit)
+        self.lat = poslat
+        self.long = poslong
+        return float(poslat), float(poslong)
+
 
     async def set_allocated_destination(self, lot):
         self.aDestX = lot.location.latitude
         self.aDestY = lot.location.longitude
-        now = time.time()
-        newtime = now + (self.distance_to(self.aDestX, self.aDestY, now) / self.speed)
-
-        # cut the last waypoint short to car's current place and time
-        self.waypoints[-1].time = now
-        lat, long = self.get_position(now)
-        self.waypoints[-1].lat = lat
-        self.waypoints[-1].long = long
-
+        lat, long = self.get_position(time.time())
+        self.waypoints.append(Waypoint(time.time(), lat, long))
+        newtime = time.time() + (self.distance_to(self.aDestX, self.aDestY,time.time()) / self.speed)
         self.waypoints.append(Waypoint(newtime, self.aDestX, self.aDestY))
+        self.state = "Searching"
 
         attempt = Attempt(newtime, 20, self)
 
@@ -434,7 +458,7 @@ async def car_routine(startt, start_loc, manager):
     waiting = True
     while waiting and not manager.stop_flag:
         await cli.send_parking_request(wsmodels.Location(float(x), float(y)), {})
-        car.drawing = True
+
 
         futs = [cli.receive(wsmodels.ParkingAllocationMessage), cli.receive(wsmodels.ErrorMessage)]
         (fut,), *_ = await asyncio.wait(futs, return_when=asyncio.FIRST_COMPLETED)
@@ -465,6 +489,11 @@ async def car_routine(startt, start_loc, manager):
             # TODO handle deallocation
         x, y = car.get_position(time.time())
         await cli.send_location(wsmodels.Location(float(x), float(y)))
+
+        if car.state == "Parked":
+            await asyncio.sleep(5)
+            car.drawing = False
+            break
 
 
 async def space_routine(startt, start_loc, capacity, name, price, available, manager):
