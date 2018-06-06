@@ -591,7 +591,7 @@ class Car:
         self.waypoints.append(Waypoint(distance / self.speed,
                                        newlot.lot.location.latitude, newlot.lot.location.longitude))
         self.drawing = True
-        self.set_allocated_destination(self.manager.lotdict[newlot.lot.id])
+        await self.set_allocated_destination(self.manager.lotdict[newlot.lot.id].lot)
 
 
 def get_route(start, end, now, speed):
