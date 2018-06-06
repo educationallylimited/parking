@@ -9,7 +9,7 @@ from parking.shared.rest_models import ParkingLot
 import parking.shared.ws_models as wsmodels
 from parking.shared.clients import CarWebsocket
 
-from simulation.simulation import SimManager, ParkingLotRest, ParkingLot as SimPL
+from simulation.simulation import SimManager, ParkingLotRest
 
 import pytest
 
@@ -26,14 +26,6 @@ async def test_create_parking_lot(http_client, base_url):
 
     response = await cli.create_lot(lot)
     lot.id = response
-    logger.debug(f'[test_create_parking_lot] created lot {response}')
-    simlot = SimPL(lot, cli, 10)
-
-    logger.debug(f'[test_create_parking_lot] sleeping for 10 ...')
-    await asyncio.sleep(1)
-    logger.debug(f'[test_create_parking_lot] slept, changing price')
-    await simlot.change_price(1.0)
-    logger.debug(f'[test_create_parking_lot] done')
 
     car_id = str(uuid4())
     car_cli = await CarWebsocket.create(base_url=base_url.replace('http', 'ws') + "/ws", user_id=car_id)
@@ -118,13 +110,6 @@ async def test_no_parking_lots_retry(http_client, base_url):
     response = await cli.create_lot(lot)
     lot.id = response
     logger.debug(f'created lot {response}')
-    simlot = SimPL(lot, cli, 10)
-
-    logger.debug(f'sleeping for 10 ...')
-    await asyncio.sleep(1)
-    logger.debug(f'slept, changing price')
-    await simlot.change_price(1.0)
-    logger.debug(f'done')
 
     response = await car_cli.send_parking_request(Location(0.0, 1.0), {})
     logger.debug(f'requested allocation: {response}')

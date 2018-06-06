@@ -88,25 +88,25 @@ class SimManager:
 
         for i in range(self.num_cars):
             start_time = 3
-            if random.randint(1, 2) == 1:
-                locx = random.choice([0, width])
-                locy = random.randint(0, height)
+            if self.random_car.randint(1, 2) == 1:
+                locx = self.random_car.choice([0, width])
+                locy = self.random_car.randint(0, height)
             else:
-                locx = random.randint(0, width)
-                locy = random.choice([0, height])
+                locx = self.random_car.randint(0, width)
+                locy = self.random_car.choice([0, height])
             loc = self.point_to_location(locx, locy)
-            p = self.point_to_location(self.random_lot.randint(0, width), self.random_lot.randint(0, height))
+            p = self.point_to_location(self.random_car.randint(0, width), self.random_car.randint(0, height))
             coro = car_routine(start_time + i/10, loc, self)
             self.car_tasks.append(asyncio.ensure_future(coro))
 
         rogue_start = 3
         for i in range(self.num_rogues):
-            if random.randint(1, 2) == 1:
-                locx = random.choice([0, width])
-                locy = random.randint(0, height)
+            if self.random_car.randint(1, 2) == 1:
+                locx = self.random_car.choice([0, width])
+                locy = self.random_car.randint(0, height)
             else:
-                locx = random.randint(0, width)
-                locy = random.choice([0, height])
+                locx = self.random_car.randint(0, width)
+                locy = self.random_car.choice([0, height])
             loc = self.point_to_location(locx, locy)
             dest = self.point_to_location(self.random_lot.randint(0, width), self.random_lot.randint(0, height))
             self.rogue_tasks.append(asyncio.ensure_future(rogue_routine(rogue_start + i/10, loc, dest, self)))
