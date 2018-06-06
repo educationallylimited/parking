@@ -64,7 +64,7 @@ class SimManager:
                 empty = False
                 while not empty:
                     p = self.point_to_location(self.random_lot.randint(1, 9) * height/10,
-                                               self.random_lot.randint(1, 9) * width/10)
+                                               self.random_lot.randint(1, 8) * width/10)
                     empty = True
                     for loc in locs:
                         if loc.longitude == p.longitude and loc.latitude == p.latitude:
@@ -87,29 +87,29 @@ class SimManager:
             name += 1
 
         for i in range(self.num_cars):
-            start_time = 3
+            start_time = 12
             if self.random_car.randint(1, 2) == 1:
                 locx = self.random_car.choice([0, width])
-                locy = self.random_car.randint(0, height)
+                locy = self.random_car.randint(1, 9) * height/10
             else:
-                locx = self.random_car.randint(0, width)
+                locx = self.random_car.randint(1, 9) * height/10
                 locy = self.random_car.choice([0, height])
             loc = self.point_to_location(locx, locy)
             p = self.point_to_location(self.random_car.randint(0, width), self.random_car.randint(0, height))
-            coro = car_routine(start_time + i/10, loc, self)
+            coro = car_routine(start_time + i, loc, self)
             self.car_tasks.append(asyncio.ensure_future(coro))
 
         rogue_start = 3
         for i in range(self.num_rogues):
             if self.random_car.randint(1, 2) == 1:
                 locx = self.random_car.choice([0, width])
-                locy = self.random_car.randint(0, height)
+                locy = self.random_car.randint(1, 9) * height/10
             else:
-                locx = self.random_car.randint(0, width)
+                locx = self.random_car.randint(1, 9) * height / 10
                 locy = self.random_car.choice([0, height])
             loc = self.point_to_location(locx, locy)
             dest = self.point_to_location(self.random_lot.randint(0, width), self.random_lot.randint(0, height))
-            self.rogue_tasks.append(asyncio.ensure_future(rogue_routine(rogue_start + i/10, loc, dest, self)))
+            self.rogue_tasks.append(asyncio.ensure_future(rogue_routine(rogue_start + i, loc, dest, self)))
 
         self.tasks = self.space_tasks + self.car_tasks + self.rogue_tasks
         self.run_task = None
@@ -161,11 +161,16 @@ class SimManager:
                     if rogue.drawing:
                         if now > rogue.starttime:
                             x, y = self.loc_to_point(wsmodels.Location(*rogue.get_position(now)))
-                            if rogue.drawhozpos:
-                                y += 5
-                            else:
+                            if rogue.drawup:
                                 if rogue.drawverpos:
+                                    x -= 5
+                                else:
                                     x += 5
+                            else:
+                                if rogue.drawhozpos:
+                                    y -= 5
+                                else:
+                                    y += 5
                             if x <= self.width:
                                 w.create_oval(x, y, x + 5, y + 5, width=0, fill='black', tags="ani")
 
@@ -249,6 +254,7 @@ class Stats(Enum):
     USERRETRY = 6
     FIRSTROGUESTARTTIME = 7
     LOTUTILITY = 8
+
 
 class Graph:
     def __init__(self, manager, stats):
@@ -352,13 +358,14 @@ class RogueCar:
         self.drawing = True
         self.drawhozpos = True
         self.drawverpos = True
+        self.drawup = True
         self.starttime = starttime
         self.bestLot = None
         self.tried = []
         self.manager = manager
         self.first_attempt = None
 
-        closeness = 5
+        closeness = 250
         self.speed = 60
         stupidity = 0.5
 
@@ -378,6 +385,12 @@ class RogueCar:
             mu = (currentY + self.destY) * 0.5
             sigma = abs(currentY - self.destY) * stupidity
             newY = random.normalvariate(mu, sigma)
+
+            p = self.manager.point_to_location(self.manager.random_car.randint(1, 9) * self.manager.height / 10,
+                                               self.manager.random_car.randint(1, 9) * self.manager.width / 10)
+
+            newX = p.longitude
+            newY = p.latitude
 
             # distance = math.sqrt((currentX - newX)**2 + (currentY - newY)**2)
             distance = geodistance(currentX, currentY, newX, newY)
@@ -435,17 +448,17 @@ class RogueCar:
         poslong = start.long + (longdiff * progress)
 
         if latdiff != 0:
-            self.drawverpos = False
+            self.drawup = True
             if latdiff > 0:
-                self.drawhozpos = True
-            else:
-                self.drawhozpos = False
-        else:
-            self.drawhozpos = False
-            if longdiff > 0:
                 self.drawverpos = True
             else:
                 self.drawverpos = False
+        else:
+            self.drawup = False
+            if longdiff > 0:
+                self.drawhozpos = True
+            else:
+                self.drawhozpos = False
 
         return float(poslat), float(poslong)
 
@@ -489,7 +502,7 @@ class RogueCar:
         # duration = bestDistance / self.speed
         # arrival = now + duration
         # self.waypoints.append(Waypoint(arrival, bestLot.lot.location.latitude, bestLot.lot.location.longitude))
-        rp = get_random_point(self.manager)
+        rp = get_random_point(self.manager, self.manager.random_car)
         # self.waypoints += get_route(oldlot.lot.location, bestLot.lot.location, now, self.speed)
         self.waypoints += get_route(oldlot.lot.location, rp, now, self.speed)
         self.waypoints += get_route(rp, bestLot.lot.location, self.waypoints[-1].time, self.speed)
@@ -624,12 +637,12 @@ def get_route(start, end, now, speed):
                 Waypoint(now + hoztime + vertime, end.latitude, end.longitude)]
 
 
-def get_random_point(manager):
+def get_random_point(manager, rn):
     if False:
         pass
     else:
-        p = manager.point_to_location(manager.random_lot.randint(1, 9) * manager.height / 10,
-                                      manager.random_lot.randint(1, 9) * manager.width / 10)
+        p = manager.point_to_location(rn.randint(1, 9) * manager.height / 10,
+                                      rn.randint(1, 9) * manager.width / 10)
         return p
 
 
