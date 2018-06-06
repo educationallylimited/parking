@@ -126,6 +126,25 @@ class SimManager:
     async def run_tk(self, root, interval):
         w = tk.Canvas(root, width=self.width*1.5, height=self.height)
         w.pack()
+
+        for i in range(10):
+            w.create_rectangle(i * self.width * 0.1 - (self.width * 0.025), 0,
+                               i * self.width * 0.1 + (self.width * 0.025), self.height,
+                               fill="grey", width=0)
+
+        for i in range(10):
+            w.create_rectangle(0, i * self.height * 0.1 - (self.height * 0.025),
+                               self.width, i * self.height * 0.1 + (self.height * 0.025),
+                               fill="grey", width=0)
+            w.create_line(0, i * self.height * 0.1,
+                               self.width, i * self.height * 0.1,
+                               fill="yellow", dash=(5, 5))
+
+        for i in range(10):
+            w.create_line(i * self.width * 0.1, 0,
+                          i * self.width * 0.1, self.height,
+                          dash=(5, 5), fill="yellow")
+
         try:
             while not self.stop_flag:
                 w.delete("ani")
@@ -144,6 +163,11 @@ class SimManager:
                     if rogue.drawing:
                         if now > rogue.starttime:
                             x, y = self.loc_to_point(wsmodels.Location(*rogue.get_position(now)))
+                            if rogue.drawhozpos:
+                                y += 5
+                            else:
+                                if rogue.drawverpos:
+                                    x += 5
                             if x <= self.width:
                                 w.create_oval(x, y, x + 5, y + 5, width=0, fill='black', tags="ani")
 
@@ -372,15 +396,16 @@ class RogueCar:
         poslat = start.lat + (latdiff * progress)
         poslong = start.long + (longdiff * progress)
 
-        if latdiff > 0:
-            self.drawhozpos = True
+        if latdiff != 0:
+            if latdiff > 0:
+                self.drawhozpos = True
+            else:
+                self.drawhozpos = False
         else:
-            self.drawhozpos = False
-
-        if longdiff > 0:
-            self.drawverpos = True
-        else:
-            self.drawverpos = False
+            if longdiff > 0:
+                self.drawverpos = True
+            else:
+                self.drawverpos = False
 
         return float(poslat), float(poslong)
 
@@ -473,7 +498,7 @@ class Car:
         while endTime < now:
             waypointIndex += 1
             if waypointIndex > len(self.waypoints) - 1:
-                return 1.0, 1.0
+                return self.waypoints[-1].long, self.waypoints[-1].lat
             endTime = self.waypoints[waypointIndex].time
 
         self.drawing = True
@@ -642,7 +667,8 @@ async def car_routine(startt, start_loc, manager):
     manager.cars.append(car)
 
     # x, y = car.aDestX, car.aDestY
-    dest = manager.point_to_location(random.randint(0, manager.width), random.randint(0, manager.height))
+    destws = manager.point_to_location(random.randint(0, manager.width), random.randint(0, manager.height))
+    dest = restmodels.Location(destws.latitude, destws.longitude)
     # TODO this was originally setting everything to 0 - do this properly later
 
     # request a parking space
@@ -665,6 +691,9 @@ async def car_routine(startt, start_loc, manager):
         await car.set_allocated_destination(space.lot)
 
         await cli.send_parking_acceptance(space.lot.id)
+        x, y = car.get_position(time.time())
+        await cli.send_location(wsmodels.Location(float(x), float(y)))
+
 
     if not manager.stop_flag:
 
@@ -682,6 +711,7 @@ async def car_routine(startt, start_loc, manager):
             # TODO handle deallocation
         logger.info(f'<Car {car_id}>: heartbeat ** send location')
         x, y = car.get_position(time.time())
+        # TODO this will probably change with the API
         await cli.send_location(wsmodels.Location(float(x), float(y)))
 
 
