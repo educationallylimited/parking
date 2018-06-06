@@ -42,9 +42,10 @@ class SimManager:
         self.stats[Stats.ROGUEPARKTIMEAVG] = 0
         self.stats[Stats.FIRSTROGUESTARTTIME] = None
         self.stats[Stats.ROGUERETRY] = [0]
+        self.stats[Stats.LOTUTILITY] = [0]
         self.graphs = []
         self.graphs.append(BarGraph(self, [Stats.ROGUEPARKTIMEAVG, Stats.ROGUEPARKTIMEAVG]))
-        self.graphs.append(LineGraph(self, [Stats.ROGUERETRY]))
+        self.graphs.append(LineGraph(self, [Stats.LOTUTILITY]))
         self.retry_lock = asyncio.Lock()
 
         self.stop_future = asyncio.Future()
@@ -126,6 +127,7 @@ class SimManager:
     async def run_tk(self, root, interval):
         w = tk.Canvas(root, width=self.width*1.5, height=self.height)
         w.pack()
+        last_interval = time.time()
 
         for i in range(10):
             w.create_rectangle(i * self.width * 0.1 - (self.width * 0.025), 0,
@@ -200,6 +202,10 @@ class SimManager:
                                        y + dxy + self.height * 0.025, tags="outline")
 
                 w.delete("graph")
+                now = time.time()
+                if now - last_interval >= 0.5:
+                    last_interval = now
+                    self.stats[Stats.LOTUTILITY].append(self.stats[Stats.LOTUTILITY][-1])
                 for g in range(len(self.graphs)):
                     graph = self.graphs[g]
                     graph.draw(w, self.width * 1.1, self.height * 0.1 + (g*0.5*self.height),
@@ -238,7 +244,7 @@ class Stats(Enum):
     ROGUERETRY = 5
     USERRETRY = 6
     FIRSTROGUESTARTTIME = 7
-
+    LOTUTILITY = 8
 
 class Graph:
     def __init__(self, manager, stats):
@@ -288,7 +294,7 @@ class LineGraph(Graph):
         w.create_line(top_left_x, bottom_right_y, bottom_right_x, bottom_right_y, fill="black")
         w.create_line(bottom_right_x, top_left_y, bottom_right_x, bottom_right_y, fill="black")
 
-        max_lines = int(width / 10)
+        max_lines = int(width / 2)
 
         values = self.manager.stats[self.stats[0]]
         # for s in range(len(self.stats)):
@@ -302,8 +308,8 @@ class LineGraph(Graph):
 
         length = width/(len(values))
         for v in range(len(values) - 1):
-            w.create_line(top_left_x + (v+1) * length, bottom_right_y - values[v] * 8,
-                          top_left_x + (v+2) * length, bottom_right_y - values[v+1] * 8,
+            w.create_line(top_left_x + (v+1) * length, bottom_right_y - values[v],
+                          top_left_x + (v+2) * length, bottom_right_y - values[v+1],
                           tags="graph")
 
 
@@ -634,6 +640,7 @@ class ParkingLot:
         self.attempts = []
         self.cars = {}
         self.lock = asyncio.Lock()
+        self.manager = manager
 
         if (self.lot.capacity < 1) or (available < 1):
             raise ValueError("Parking capacity/availability must be positive")
@@ -657,6 +664,7 @@ class ParkingLot:
             if self.available > 0:
                 await self.client.update_available(self.lot.id, self.available - 1)
                 self.available -= 1
+                self.manager.stats[Stats.LOTUTILITY][-1] += 1
                 return True
             else:
                 return False
@@ -666,6 +674,7 @@ class ParkingLot:
             if self.available < self.lot.capacity:
                 await self.client.update_available(self.lot.id, self.available + 1)
                 self.available += 1
+                self.manager.stats[Stats.LOTUTILITY][-1] -= 1
                 return True
             else:
                 return False
