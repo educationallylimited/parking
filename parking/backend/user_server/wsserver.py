@@ -108,7 +108,7 @@ class UserWSHandler(websocket.WebSocketHandler):
 
     def handle_deallocation(self) -> None:
         logger.debug("Deallocation requested for user_id = '{}'".format(self.user_id))
-        self.write_as_json(models.ParkingDeallocationMessage(int(self.user_id)))
+        self.write_as_json(models.ParkingDeallocationMessage())
 
     def on_close(self) -> None:
         if self.user_id in self.usessions.users and self.usessions.get_user(self.user_id).session is self:
