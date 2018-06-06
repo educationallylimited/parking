@@ -6,6 +6,10 @@ from .simulation import SimManager
 
 
 def main(base_url, num_spaces=5, num_cars=1, num_rogues=1, parking_seed=time.time(), car_seed=time.time()):
+    print(f'Starting simulation')
+    print(f'Car Seed = {car_seed!r}')
+    print(f'Parking Seed = {parking_seed!r}')
+
     sim = SimManager(
         num_spaces=num_spaces,
         min_spaces_per_lot=5,
