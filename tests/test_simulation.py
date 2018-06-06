@@ -162,7 +162,7 @@ async def test_no_parking_lots_retry_waiting(http_client, base_url):
     assert space.error.msg == 'No parking lot available.'
 
 
-@pytest.mark.gen_test(run_sync=False, timeout=60)
+@pytest.mark.gen_test(run_sync=False, timeout=90)
 async def test_integrate_sim(caplog, http_client, base_url):
     caplog.set_level(logging.INFO)
     car_positions = []
