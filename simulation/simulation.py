@@ -173,7 +173,8 @@ class SimManager:
                     available = simlot.available*4
                     dxy = self.width * 0.05
                     # shadow
-                    w.create_rectangle(x + available + self.width * 0.025, y + available + self.height * 0.025 - available,
+                    w.create_rectangle(x + available + self.width * 0.025,
+                                       y + available + self.height * 0.025 - available,
                                        x + available + dxy + self.width * 0.025,
                                        y + available + dxy + self.height * 0.025 - available,
                                        tags="outline", fill="#444444444444",
