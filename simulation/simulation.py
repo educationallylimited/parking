@@ -149,10 +149,6 @@ class SimManager:
             while not self.stop_flag:
                 w.delete("ani")
                 now = time.time()
-                for simlot in self.lots:
-                    x, y = self.loc_to_point(simlot.lot.location)
-                    dxy = simlot.available*4
-                    w.create_rectangle(x, y, x + dxy, y + dxy, width=0, fill="green", tags="ani")
 
                 for car in self.cars:
                     if car.drawing:
@@ -170,6 +166,38 @@ class SimManager:
                                     x += 5
                             if x <= self.width:
                                 w.create_oval(x, y, x + 5, y + 5, width=0, fill='black', tags="ani")
+
+                w.delete("outline")
+                for simlot in self.lots:
+                    x, y = self.loc_to_point(simlot.lot.location)
+                    available = simlot.available*4
+                    dxy = self.width * 0.05
+                    # shadow
+                    w.create_rectangle(x + available + self.width * 0.025,
+                                       y + available + self.height * 0.025 - available,
+                                       x + available + dxy + self.width * 0.025,
+                                       y + available + dxy + self.height * 0.025 - available,
+                                       tags="outline", fill="#444444444444",
+                                       stipple="gray75", width=0)
+                    # colourful bit
+                    if simlot.available < simlot.lot.capacity * 0.5:
+                        red = "ffff"
+                        green = hex(int(65535 * (simlot.available / simlot.lot.capacity)))[2:]
+                    else:
+                        red = hex(int(65535 * (1 - (simlot.available / simlot.lot.capacity))))[2:]
+                        green = "ffff"
+                    w.create_rectangle(x + self.width * 0.025, y + self.height * 0.025 - available,
+                                       x + dxy + self.width * 0.025,
+                                       y + dxy + self.height * 0.025, width=0,
+                                       fill="#" + red + green + "0000", tags="ani")
+                    # outline of roof
+                    w.create_rectangle(x + self.width * 0.025, y + self.height * 0.025 - available,
+                                       x + dxy + self.width * 0.025,
+                                       y + dxy + self.height * 0.025 - available, tags="outline")
+                    # outline of wall
+                    w.create_rectangle(x + self.width * 0.025, y + dxy + self.height * 0.025 - available,
+                                       x + dxy + self.width * 0.025,
+                                       y + dxy + self.height * 0.025, tags="outline")
 
                 w.delete("graph")
                 for g in range(len(self.graphs)):
@@ -397,11 +425,13 @@ class RogueCar:
         poslong = start.long + (longdiff * progress)
 
         if latdiff != 0:
+            self.drawverpos = False
             if latdiff > 0:
                 self.drawhozpos = True
             else:
                 self.drawhozpos = False
         else:
+            self.drawhozpos = False
             if longdiff > 0:
                 self.drawverpos = True
             else:
@@ -562,7 +592,7 @@ class Car:
         self.waypoints.append(Waypoint(distance / self.speed,
                                        newlot.lot.location.latitude, newlot.lot.location.longitude))
         self.drawing = True
-        self.set_allocated_destination(self.manager.lotdict[newlot.lot.id])
+        await self.set_allocated_destination(self.manager.lotdict[newlot.lot.id].lot)
 
 
 def get_route(start, end, now, speed):
@@ -598,7 +628,7 @@ class Attempt:
 
 
 class ParkingLot:
-    def __init__(self, lot: restmodels.ParkingLot, client: ParkingLotRest, available: int = 0):
+    def __init__(self, lot: restmodels.ParkingLot, client: ParkingLotRest, manager, available: int = 0):
 
         self.lot = lot
         self.attempts = []
@@ -706,6 +736,7 @@ async def car_routine(startt, start_loc, manager):
             deallocation = None
         if deallocation is not None:
             logger.info("Recieved deallocation")
+            print("deallocated")
             # TODO handle deallocation
         logger.info(f'<Car {car_id}>: heartbeat ** send location')
         x, y = car.get_position(time.time())
@@ -724,7 +755,7 @@ async def space_routine(startt, start_loc, capacity, name, price, available, man
 
     logger.info("created lot {}".format(response))
 
-    simlot = ParkingLot(lot, cli, capacity)
+    simlot = ParkingLot(lot, cli, manager, capacity)
     manager.lotdict[lot.id] = simlot
     manager.lots.append(simlot)
 
