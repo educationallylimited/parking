@@ -627,7 +627,7 @@ class Attempt:
 
 
 class ParkingLot:
-    def __init__(self, lot: restmodels.ParkingLot, client: ParkingLotRest, available: int = 0):
+    def __init__(self, lot: restmodels.ParkingLot, client: ParkingLotRest, manager, available: int = 0):
 
         self.lot = lot
         self.attempts = []
@@ -756,7 +756,7 @@ async def space_routine(startt, start_loc, capacity, name, price, available, man
 
     logger.info("created lot {}".format(response))
 
-    simlot = ParkingLot(lot, cli, capacity)
+    simlot = ParkingLot(lot, cli, manager, capacity)
     manager.lotdict[lot.id] = simlot
     manager.lots.append(simlot)
 
