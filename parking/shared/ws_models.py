@@ -91,7 +91,6 @@ class ParkingRejectionMessage:
 
 @attr.s
 class ParkingDeallocationMessage:
-    id: int = attr.ib(validator=[enforce_type, validate_non_neg])
     _type: int = attr.ib(default=WebSocketMessageType.PARKING_DEALLOC.value, init=False)
 
 
