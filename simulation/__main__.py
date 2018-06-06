@@ -30,12 +30,12 @@ def main(base_url, num_spaces, num_cars, num_rogues, spaces_per_lot, parking_see
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Parking Simulation.')
     parser.add_argument("base_url", default="http://127.0.0.1:8888", nargs='?', help="Base URL for the engine server")
-    parser.add_argument("--num-spaces", type=int, default=5, help="Number of parking lots")
-    parser.add_argument("--spaces-per-lot", type=int, default=5, help="Number of parking spaces per lot")
-    parser.add_argument("--car-seed", type=int, default=time.time(), help="Car Initialisation seed")
-    parser.add_argument("--parking-seed", type=int, default=time.time(), help="Parking Lot Intialisation seed")
-    parser.add_argument("--num-cars", type=int, default=1, help="Number of agents")
-    parser.add_argument("--num-rogues", type=int, default=1, help="Number of rogue agents")
+    parser.add_argument("--num-cars", type=int, default=20, help="Number of agents")
+    parser.add_argument("--num-rogues", type=int, default=5, help="Number of rogue agents")
+    parser.add_argument("--num-spaces", type=int, default=15, help="Number of parking lots")
+    parser.add_argument("--spaces-per-lot", type=int, default=10, help="Number of parking spaces per lot")
+    parser.add_argument("--car-seed", type=int, default=int(time.time()), help="Car Initialisation seed")
+    parser.add_argument("--parking-seed", type=int, default=int(time.time()), help="Parking Lot Intialisation seed")
     args: argparse.Namespace = parser.parse_args()
 
     main(
