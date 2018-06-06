@@ -137,8 +137,8 @@ class SimManager:
                                self.width, i * self.height * 0.1 + (self.height * 0.025),
                                fill="grey", width=0)
             w.create_line(0, i * self.height * 0.1,
-                               self.width, i * self.height * 0.1,
-                               fill="yellow", dash=(5, 5))
+                          self.width, i * self.height * 0.1,
+                          fill="yellow", dash=(5, 5))
 
         for i in range(10):
             w.create_line(i * self.width * 0.1, 0,
@@ -367,8 +367,8 @@ class RogueCar:
 
         # drive to the closest lot
         duration = bestDistance / self.speed
-        arrival = lasttime + duration
-        #self.waypoints.append(Waypoint(arrival, bestLot.lot.location.latitude, bestLot.lot.location.longitude))
+        # arrival = lasttime + duration
+        # self.waypoints.append(Waypoint(arrival, bestLot.lot.location.latitude, bestLot.lot.location.longitude))
         self.waypoints += get_route(wsmodels.Location(currentX, currentY), bestLot.lot.location, lasttime, self.speed)
         self.bestLot = bestLot
         attempt = Attempt(self.waypoints[-1].time, 20, self)
@@ -382,7 +382,7 @@ class RogueCar:
         while endTime < now:
             waypointIndex += 1
             if waypointIndex > len(self.waypoints) - 1:
-                #self.drawing = False
+                # self.drawing = False
                 return self.waypoints[-1].long, self.waypoints[-1].lat
             endTime = self.waypoints[waypointIndex].time
 
@@ -445,9 +445,9 @@ class RogueCar:
 
         self.bestLot = bestLot
         # drive to the closest lot
-        duration = bestDistance / self.speed
-        arrival = now + duration
         self.drawing = True
+        # duration = bestDistance / self.speed
+        # arrival = now + duration
         # self.waypoints.append(Waypoint(arrival, bestLot.lot.location.latitude, bestLot.lot.location.longitude))
         rp = get_random_point(self.manager)
         # self.waypoints += get_route(oldlot.lot.location, bestLot.lot.location, now, self.speed)
@@ -518,7 +518,6 @@ class Car:
         self.aDestX = lot.location.latitude
         self.aDestY = lot.location.longitude
         now = time.time()
-        newtime = now + (self.distance_to(self.aDestX, self.aDestY, now) / self.speed)
 
         # cut the last waypoint short to car's current place and time
         self.waypoints[-1].time = now
@@ -526,6 +525,7 @@ class Car:
         self.waypoints[-1].lat = lat
         self.waypoints[-1].long = long
 
+        # newtime = now + (self.distance_to(self.aDestX, self.aDestY, now) / self.speed)
         # self.waypoints.append(Waypoint(newtime, self.aDestX, self.aDestY))
         self.waypoints += get_route(wsmodels.Location(lat, long), lot.location, self.waypoints[-1].time, self.speed)
         for w in self.waypoints:
@@ -694,9 +694,7 @@ async def car_routine(startt, start_loc, manager):
         x, y = car.get_position(time.time())
         await cli.send_location(wsmodels.Location(float(x), float(y)))
 
-
     if not manager.stop_flag:
-
         await cli.receive(wsmodels.WebSocketMessageType.CONFIRMATION)
         logger.info("conf recieved")
 
