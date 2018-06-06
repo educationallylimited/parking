@@ -172,7 +172,7 @@ class SimManager:
                 w.delete("outline")
                 for simlot in self.lots:
                     x, y = self.loc_to_point(simlot.lot.location)
-                    available = simlot.available*4
+                    available = int(20 * simlot.available / simlot.lot.capacity)
                     dxy = self.width * 0.05
                     # shadow
                     w.create_rectangle(x + available + self.width * 0.025,
@@ -182,12 +182,16 @@ class SimManager:
                                        tags="outline", fill="#444444444444",
                                        stipple="gray75", width=0)
                     # colourful bit
-                    if simlot.available < simlot.lot.capacity * 0.5:
+                    if simlot.available == 0:
                         red = "ffff"
-                        green = hex(int(65535 * (simlot.available / simlot.lot.capacity)))[2:]
+                        green = "0000"
                     else:
-                        red = hex(int(65535 * (1 - (simlot.available / simlot.lot.capacity))))[2:]
-                        green = "ffff"
+                        if simlot.available < simlot.lot.capacity * 0.5:
+                            red = "ffff"
+                            green = hex(int(65535 * (simlot.available / simlot.lot.capacity)))[2:]
+                        else:
+                            red = hex(int(65535 * (1 - (simlot.available / simlot.lot.capacity))))[2:]
+                            green = "ffff"
                     w.create_rectangle(x + self.width * 0.025, y + self.height * 0.025 - available,
                                        x + dxy + self.width * 0.025,
                                        y + dxy + self.height * 0.025, width=0,
@@ -545,7 +549,10 @@ class Car:
         latdiff = end.lat - start.lat
         longdiff = end.long - start.long
         timediff = end.time - start.time
-        progress = (now - start.time) / timediff
+        if timediff != 0:
+            progress = (now - start.time) / timediff
+        else:
+            progress = 0
         poslat = start.lat + (latdiff * progress)
         poslong = start.long + (longdiff * progress)
         return float(poslat), float(poslong)
