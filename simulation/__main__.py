@@ -5,7 +5,7 @@ import argparse
 from .simulation import SimManager
 
 
-def main(base_url, num_spaces, num_cars, num_rogues, spaces_per_lot, parking_seed, car_seed):
+def main(base_url, num_spaces, num_cars, num_rogues, spaces_per_lot, parking_seed, car_seed, headless=False):
     print(f'Starting simulation')
     print(f'Car Seed = {car_seed!r}')
     print(f'Parking Seed = {parking_seed!r}')
@@ -22,7 +22,7 @@ def main(base_url, num_spaces, num_cars, num_rogues, spaces_per_lot, parking_see
         max_time=100,
         app_url=base_url
     )
-    asyncio.ensure_future(sim.run())
+    asyncio.ensure_future(sim.run(run_tk=not headless))
     loop = asyncio.get_event_loop()
     loop.run_forever()
 
@@ -36,6 +36,7 @@ if __name__ == "__main__":
     parser.add_argument("--spaces-per-lot", type=int, default=10, help="Number of parking spaces per lot")
     parser.add_argument("--car-seed", type=int, default=int(time.time()), help="Car Initialisation seed")
     parser.add_argument("--parking-seed", type=int, default=int(time.time()), help="Parking Lot Intialisation seed")
+    parser.add_argument("--headless", action='store_true', help="Run simulation without tk")
     args: argparse.Namespace = parser.parse_args()
 
     main(
@@ -46,4 +47,5 @@ if __name__ == "__main__":
         parking_seed=args.parking_seed,
         num_cars=args.num_cars,
         num_rogues=args.num_rogues,
+        headless=args.headless,
     )
