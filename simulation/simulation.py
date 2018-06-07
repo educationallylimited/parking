@@ -44,8 +44,8 @@ class SimManager:
         self.stats[Stats.ROGUERETRY] = [0]
         self.stats[Stats.LOTUTILITY] = [0]
         self.graphs = []
-        self.graphs.append(BarGraph(self, [Stats.ROGUEPARKTIMEAVG, Stats.ROGUEPARKTIMEAVG]))
-        self.graphs.append(LineGraph(self, [Stats.LOTUTILITY]))
+        self.graphs.append(BarGraph(self, [Stats.ROGUEPARKTIMEAVG, Stats.ROGUEPARKTIMEAVG], 9, "", ""))
+        self.graphs.append(LineGraph(self, [Stats.LOTUTILITY], 50, "Lot utility (%)", ""))
         self.retry_lock = asyncio.Lock()
 
         self.stop_future = asyncio.Future()
@@ -155,7 +155,11 @@ class SimManager:
                 for car in self.cars:
                     if car.drawing:
                         x, y = self.loc_to_point(wsmodels.Location(*car.get_position(now)))
-                        w.create_oval(x, y, x + 5, y + 5, width=0, fill='blue', tags="ani")
+                        if car.reallocated:
+                            fill = "red"
+                        else:
+                            fill = "blue"
+                        w.create_oval(x, y, x + 5, y + 5, width=0, fill=fill, tags="ani")
 
                 for rogue in self.rogues:
                     if rogue.drawing:
@@ -254,20 +258,24 @@ class Stats(Enum):
     USERRETRY = 6
     FIRSTROGUESTARTTIME = 7
     LOTUTILITY = 8
+    SPACECOUNT = 9
 
 
 class Graph:
-    def __init__(self, manager, stats):
+    def __init__(self, manager, stats, ceiling, xlabel, ylabel):
         self.manager = manager
         self.stats = stats
+        self.ceiling = ceiling
+        self.xlabel = xlabel
+        self.ylabel = ylabel
 
     def draw(self, canvas: tk.Canvas, top_left_x, top_left_y, bottom_right_x, bottom_right_y):
         pass
 
 
 class BarGraph(Graph):
-    def __init__(self, manager, stats):
-        super().__init__(manager, stats)
+    def __init__(self, manager, stats, ceiling, xlabel, ylabel):
+        super().__init__(manager, stats, ceiling, xlabel, ylabel)
 
     def draw(self, w: tk.Canvas, top_left_x, top_left_y, bottom_right_x, bottom_right_y):
         width = bottom_right_x - top_left_x
@@ -295,12 +303,12 @@ class BarGraph(Graph):
 
 
 class LineGraph(Graph):
-    def __init__(self, manager, stats):
-        super().__init__(manager, stats)
+    def __init__(self, manager, stats, ceiling, xlabel, ylabel):
+        super().__init__(manager, stats, ceiling, xlabel, ylabel)
 
     def draw(self, w: tk.Canvas, top_left_x, top_left_y, bottom_right_x, bottom_right_y):
         width = bottom_right_x - top_left_x
-        # height = bottom_right_y - top_left_y
+        height = bottom_right_y - top_left_y
         w.create_line(top_left_x, bottom_right_y, bottom_right_x, bottom_right_y, fill="black")
         w.create_line(bottom_right_x, top_left_y, bottom_right_x, bottom_right_y, fill="black")
 
@@ -318,9 +326,11 @@ class LineGraph(Graph):
 
         length = width/(len(values))
         for v in range(len(values) - 1):
-            w.create_line(top_left_x + (v+1) * length, bottom_right_y - values[v],
-                          top_left_x + (v+2) * length, bottom_right_y - values[v+1],
+            w.create_line(top_left_x + (v+1) * length, bottom_right_y - int(height * values[v] / self.ceiling),
+                          top_left_x + (v+2) * length, bottom_right_y - int(height * values[v+1] / self.ceiling),
                           tags="graph")
+
+        w.create_text(top_left_x + width * 0.5, bottom_right_y + height * 0.1, text=self.xlabel)
 
 
 class Waypoint:
@@ -525,6 +535,8 @@ class Car:
         self.waypoints.append(Waypoint(time.time(), self.lat, self.long))
         self.manager = manager
         self.cli = cli
+        self.finished = False
+        self.reallocated = False
 
     def distance_to(self, x, y, now):
         lat, long = self.get_position(now)
@@ -541,6 +553,9 @@ class Car:
         #     return poslat, poslong
         # else:
         #     return self.lat, self.long
+
+        if (len(self.waypoints)) == 0:
+            return 1.0, 1.0
 
         if (len(self.waypoints)) == 1:
             return self.waypoints[0].lat, self.waypoints[0].long
@@ -593,32 +608,14 @@ class Car:
 
     def park(self):
         logger.info("successfully parked user")
+        print("user successfully parked")
         self.drawing = False
+        self.finished = True
 
     async def retry(self, now, oldlot):
         logger.info("too full for user")
-        x, y = self.get_position(now)
-
-        self.waypoints = []
-        waiting = True
-        self.drawing = False
-        while waiting and not self.manager.stop_flag:
-            await self.cli.send_parking_request(wsmodels.Location(float(x), float(y)), {})
-            futs = [self.cli.receive(wsmodels.ParkingAllocationMessage), self.cli.receive(wsmodels.ErrorMessage)]
-            (fut,), *_ = await asyncio.wait(futs, return_when=asyncio.FIRST_COMPLETED)
-            newlot = fut.result()
-            logger.debug('got result: {}'.format(newlot))
-            if not isinstance(newlot, wsmodels.ErrorMessage):
-                break
-            await asyncio.sleep(1)
-        logger.info("successfully reallocated to " + str(newlot.lot.id))
-        self.waypoints.append(Waypoint(now, oldlot.lot.location.latitude, oldlot.lot.location.longitude))
-        distance = geodistance(oldlot.lot.location.latitude, oldlot.lot.location.longitude,
-                               newlot.lot.location.latitude, newlot.lot.location.longitude)
-        self.waypoints.append(Waypoint(distance / self.speed,
-                                       newlot.lot.location.latitude, newlot.lot.location.longitude))
+        print("user found full space")
         self.drawing = True
-        await self.set_allocated_destination(self.manager.lotdict[newlot.lot.id].lot)
 
 
 def get_route(start, end, now, speed):
@@ -754,19 +751,37 @@ async def car_routine(startt, start_loc, manager):
         await cli.send_location(wsmodels.Location(float(x), float(y)))
 
     if not manager.stop_flag:
-        await cli.receive(wsmodels.WebSocketMessageType.CONFIRMATION)
+        await cli.receive(wsmodels.ConfirmationMessage)
         logger.info("conf recieved")
 
-    while not manager.stop_flag:
+    while not manager.stop_flag and not car.finished:
         # Send the location of the car at time intervals, while listening for deallocation
         try:
-            deallocation = await asyncio.shield(asyncio.wait_for(cli.receive(wsmodels.ParkingCancellationMessage), 3))
+            deallocation = await asyncio.shield(asyncio.wait_for(cli.receive(wsmodels.ParkingDeallocationMessage), 3))
         except futures.TimeoutError:
             deallocation = None
-        if deallocation is not None:
+        if deallocation is not None and not car.finished:
             logger.info("Recieved deallocation")
             print("deallocated")
-            # TODO handle deallocation
+            car.reallocated = True
+            waiting = True
+            while waiting and not manager.stop_flag:
+                await cli.send_parking_request(dest, {})
+                car.drawing = True
+
+                futs = [cli.receive(wsmodels.ParkingAllocationMessage), cli.receive(wsmodels.ErrorMessage)]
+                (fut,), *_ = await asyncio.wait(futs, return_when=asyncio.FIRST_COMPLETED)
+                space = fut.result()
+                logger.debug('got result: {}'.format(space))
+                if not isinstance(space, wsmodels.ErrorMessage):
+                    break
+                await asyncio.sleep(1)
+
+            if not manager.stop_flag:
+                logger.info(f"allocation recieved: for car {car_id}: '{space._type}'")
+                await car.set_allocated_destination(space.lot)
+
+                await cli.send_parking_acceptance(space.lot.id)
         logger.info(f'<Car {car_id}>: heartbeat ** send location')
         x, y = car.get_position(time.time())
         # TODO this will probably change with the API
