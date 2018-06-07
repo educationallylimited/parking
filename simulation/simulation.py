@@ -39,13 +39,19 @@ class SimManager:
         self.app_url = app_url
         self.stats = {}
         self.stats[Stats.ROGUECOUNT] = 0
+        self.stats[Stats.USERCOUNT] = 0
         self.stats[Stats.ROGUEPARKTIMEAVG] = 0
         self.stats[Stats.FIRSTROGUESTARTTIME] = None
         self.stats[Stats.ROGUERETRY] = [0]
         self.stats[Stats.LOTUTILITY] = [0]
+        self.stats[Stats.SPACECOUNT] = 0
+        self.stats[Stats.AVGROGUEDIST] = 0
+        self.stats[Stats.AVGUSERDIST] = 0
         self.graphs = []
-        self.graphs.append(BarGraph(self, [Stats.ROGUEPARKTIMEAVG, Stats.ROGUEPARKTIMEAVG], 9, "", ""))
-        self.graphs.append(LineGraph(self, [Stats.LOTUTILITY], 50, "Lot utility (%)", ""))
+        self.graphs.append(BarGraph(self, [Stats.AVGUSERDIST, Stats.AVGROGUEDIST],
+                                    geodistance(0, 0, width/SCALE, height/SCALE),
+                                    "Average distance for\n  users   rogues", ""))
+        self.graphs.append(LineGraph(self, [Stats.LOTUTILITY], Stats.SPACECOUNT, "Lot utility (%)", ""))
         self.retry_lock = asyncio.Lock()
 
         self.stop_future = asyncio.Future()
@@ -259,6 +265,8 @@ class Stats(Enum):
     FIRSTROGUESTARTTIME = 7
     LOTUTILITY = 8
     SPACECOUNT = 9
+    AVGUSERDIST = 10
+    AVGROGUEDIST = 11
 
 
 class Graph:
@@ -279,7 +287,7 @@ class BarGraph(Graph):
 
     def draw(self, w: tk.Canvas, top_left_x, top_left_y, bottom_right_x, bottom_right_y):
         width = bottom_right_x - top_left_x
-        # height = bottom_right_y - top_left_y
+        height = bottom_right_y - top_left_y
         w.create_line(top_left_x, bottom_right_y, bottom_right_x, bottom_right_y, fill="black")
         w.create_line(bottom_right_x, top_left_y, bottom_right_x, bottom_right_y, fill="black")
 
@@ -297,9 +305,11 @@ class BarGraph(Graph):
         for v in range(len(values)):
             value = self.manager.stats[values[v]]
             w.create_rectangle(v * segment + bar_gap + top_left_x,
-                               bottom_right_y - (value * 5),
+                               bottom_right_y - (height * value / self.ceiling),
                                (v+1) * segment - bar_gap + top_left_x,
                                bottom_right_y, tags="graph")
+
+        w.create_text(top_left_x + width * 0.5, bottom_right_y + height * 0.1, text=self.xlabel)
 
 
 class LineGraph(Graph):
@@ -324,10 +334,12 @@ class LineGraph(Graph):
         if len(values) > max_lines:
             values = values[-max_lines:]
 
+        c = self.manager.stats[self.ceiling]
+
         length = width/(len(values))
         for v in range(len(values) - 1):
-            w.create_line(top_left_x + (v+1) * length, bottom_right_y - int(height * values[v] / self.ceiling),
-                          top_left_x + (v+2) * length, bottom_right_y - int(height * values[v+1] / self.ceiling),
+            w.create_line(top_left_x + (v+1) * length, bottom_right_y - int(height * values[v] / c),
+                          top_left_x + (v+2) * length, bottom_right_y - int(height * values[v+1] / c),
                           tags="graph")
 
         w.create_text(top_left_x + width * 0.5, bottom_right_y + height * 0.1, text=self.xlabel)
@@ -475,12 +487,17 @@ class RogueCar:
     def park(self):
         now = time.time()
 
-        mean = self.manager.stats[Stats.ROGUEPARKTIMEAVG]
+        meant = self.manager.stats[Stats.ROGUEPARKTIMEAVG]
+        meand = self.manager.stats[Stats.AVGROGUEDIST]
         count = self.manager.stats[Stats.ROGUECOUNT]
 
-        newmean = ((mean * count) + (now - self.starttime)) / (count + 1)
+        newmeant = ((meant * count) + (now - self.starttime)) / (count + 1)
+        newmeand = ((meand * count) + (geodistance(self.destX, self.destY,
+                                                   self.bestLot.lot.location.longitude,
+                                                   self.bestLot.lot.location.latitude))) / (count + 1)
 
-        self.manager.stats[Stats.ROGUEPARKTIMEAVG] = newmean
+        self.manager.stats[Stats.ROGUEPARKTIMEAVG] = newmeant
+        self.manager.stats[Stats.AVGROGUEDIST] = newmeand
         self.manager.stats[Stats.ROGUECOUNT] += 1
 
     async def retry(self, now, oldlot):
@@ -537,6 +554,7 @@ class Car:
         self.cli = cli
         self.finished = False
         self.reallocated = False
+        self.targetlotid = None
 
     def distance_to(self, x, y, now):
         lat, long = self.get_position(now)
@@ -599,16 +617,26 @@ class Car:
         # newtime = now + (self.distance_to(self.aDestX, self.aDestY, now) / self.speed)
         # self.waypoints.append(Waypoint(newtime, self.aDestX, self.aDestY))
         self.waypoints += get_route(wsmodels.Location(lat, long), lot.location, self.waypoints[-1].time, self.speed)
-        for w in self.waypoints:
-            pass
 
         attempt = Attempt(self.waypoints[-1].time, 20, self)
+
+        self.targetlotid = lot.id
 
         await self.manager.lotdict[lot.id].register(attempt)
 
     def park(self):
         logger.info("successfully parked user")
         print("user successfully parked")
+
+        meand = self.manager.stats[Stats.AVGROGUEDIST]
+        count = self.manager.stats[Stats.ROGUECOUNT]
+
+        newmeand = ((meand * count) + (geodistance(self.destX, self.destY,
+                                                   self.aDestX, self.aDestY))) / (count + 1)
+
+        self.manager.stats[Stats.AVGUSERDIST] = newmeand
+        self.manager.stats[Stats.USERCOUNT] += 1
+
         self.drawing = False
         self.finished = True
 
@@ -668,6 +696,7 @@ class ParkingLot:
         if available > self.lot.capacity:
             raise ValueError("Capacity has to be greater than available spaces")
 
+        self.manager.stats[Stats.SPACECOUNT] += lot.capacity
         self.available: int = available
         self.client = client
 
