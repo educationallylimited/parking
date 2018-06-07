@@ -120,6 +120,7 @@ class SimManager:
             self.rogue_tasks.append(asyncio.ensure_future(rogue_routine(rogue_start + i, loc, dest, self)))
 
         self.tasks = self.space_tasks + self.car_tasks + self.rogue_tasks
+        self.tasks.append(dump_stats(self, 30))
         self.run_task = None
 
     def point_to_location(self, x: float, y: float) -> wsmodels.Location:
@@ -132,17 +133,32 @@ class SimManager:
         """
         return (loc.longitude * SCALE, loc.latitude * SCALE)
 
+    def random_edge_square(self, rn):
+        if rn.randint(1, 2) == 1:
+            locx = rn.choice([0, self.width])
+            locy = rn.randint(1, 9) * self.height / 10
+        else:
+            locx = rn.randint(1, 9) * self.height / 10
+            locy = rn.choice([0, self.height])
+        loc = self.point_to_location(locx, locy)
+        return loc
+
+    def random_square(self, rn):
+        p = self.point_to_location(rn.randint(1, 9) * self.height / 10,
+                                   rn.randint(1, 8) * self.width / 10)
+        return p
+
     async def run_tk(self, root, interval):
         w = tk.Canvas(root, width=self.width*1.5, height=self.height)
         w.pack()
         last_interval = time.time()
 
-        for i in range(10):
+        for i in range(11):
             w.create_rectangle(i * self.width * 0.1 - (self.width * 0.025), 0,
                                i * self.width * 0.1 + (self.width * 0.025), self.height,
                                fill="grey", width=0)
 
-        for i in range(10):
+        for i in range(11):
             w.create_rectangle(0, i * self.height * 0.1 - (self.height * 0.025),
                                self.width, i * self.height * 0.1 + (self.height * 0.025),
                                fill="grey", width=0)
@@ -161,7 +177,7 @@ class SimManager:
                 now = time.time()
 
                 for car in self.cars:
-                    if car.drawing and not car.finished:
+                    if car.drawing:
                         x, y = self.loc_to_point(wsmodels.Location(*car.get_position(now)))
                         if car.reallocated:
                             fill = "red"
@@ -191,13 +207,25 @@ class SimManager:
                     x, y = self.loc_to_point(simlot.lot.location)
                     available = int(20 * simlot.available / simlot.lot.capacity)
                     dxy = self.width * 0.05
+                    offsetw = self.width * 0.025
+                    offseth = self.height * 0.025
                     # shadow
-                    w.create_rectangle(x + available + self.width * 0.025,
-                                       y + available + self.height * 0.025 - available,
-                                       x + available + dxy + self.width * 0.025,
-                                       y + available + dxy + self.height * 0.025 - available,
+                    w.create_rectangle(x + available + offsetw,
+                                       y + offseth - available + 4,
+                                       x + available + dxy + offsetw,
+                                       y + dxy + offseth - available,
                                        tags="outline", fill="#444444444444",
                                        stipple="gray75", width=0)
+                    w.create_polygon(x + available + offsetw,
+                                     y + dxy + offseth - available - 2,
+                                     x + available + dxy + offsetw,
+                                     y + dxy + offseth - available - 2,
+                                     x + offsetw + dxy,
+                                     y + dxy + offseth,
+                                     fill="#444444444444",
+                                     tags="outline",
+                                     width=0,
+                                     stipple="gray75")
                     # colourful bit
                     if simlot.available == 0:
                         red = "ffff"
@@ -205,9 +233,9 @@ class SimManager:
                     else:
                         if simlot.available < simlot.lot.capacity * 0.5:
                             red = "ffff"
-                            green = hex(int(65535 * (simlot.available / simlot.lot.capacity)))[2:]
+                            green = hex(int(65535 * 2 * (simlot.available / simlot.lot.capacity)))[2:]
                         else:
-                            red = hex(int(65535 * (1 - (simlot.available / simlot.lot.capacity))))[2:]
+                            red = hex(int(65535 * 2 * (1 - (simlot.available / simlot.lot.capacity))))[2:]
                             green = "ffff"
                     w.create_rectangle(x + self.width * 0.025, y + self.height * 0.025 - available,
                                        x + dxy + self.width * 0.025,
@@ -217,6 +245,35 @@ class SimManager:
                     w.create_rectangle(x + self.width * 0.025, y + self.height * 0.025 - available,
                                        x + dxy + self.width * 0.025,
                                        y + dxy + self.height * 0.025 - available, tags="outline")
+
+                    #roof point
+                    if red != "0" and green != "0":
+                        darkred = hex(int(65535 * (1 - (simlot.available / simlot.lot.capacity))))[2:]
+                        darkgreen = hex(int(65535 * (simlot.available / simlot.lot.capacity)))[2:]
+                    else:
+                        darkred = "0000"
+                        darkgreen = "8888"
+                    dark = "#" + darkred + darkgreen + "0000"
+                    roofcenterx = x + offsetw + (dxy*0.5)
+                    roofcentery = y + offseth + (dxy*0.25) - available
+                    rooftopleftx = x + offsetw
+                    rooftoplefty = y + offseth - available
+                    rooftoprightx = x + dxy + offsetw
+                    rooftoprighty = y + offseth - available
+                    roofbottomrightx = x + dxy + offsetw
+                    roofbottomrighty = y + offseth - available + dxy
+                    roofbottomleftx = x + offsetw
+                    roofbottomlefty = y + offseth - available + dxy
+                    w.create_polygon(roofcenterx, roofcentery, rooftopleftx, rooftoplefty,
+                                     rooftoprightx, rooftoprighty, fill=dark, tags="outline")
+                    w.create_polygon(roofcenterx, roofcentery, roofbottomrightx, roofbottomrighty,
+                                     rooftoprightx, rooftoprighty, fill=dark, tags="outline")
+
+                    w.create_line(roofbottomleftx, roofbottomlefty, roofcenterx, roofcentery, tags="outline")
+                    w.create_line(roofbottomleftx, rooftoplefty, roofcenterx, roofcentery, tags="outline")
+                    w.create_line(roofbottomrightx, roofbottomlefty, roofcenterx, roofcentery, tags="outline")
+                    w.create_line(roofbottomrightx, rooftoplefty, roofcenterx, roofcentery, tags="outline")
+
                     # outline of wall
                     w.create_rectangle(x + self.width * 0.025, y + dxy + self.height * 0.025 - available,
                                        x + dxy + self.width * 0.025,
@@ -512,6 +569,11 @@ class RogueCar:
         self.manager.stats[Stats.AVGROGUEDIST] = newmeand
         self.manager.stats[Stats.ROGUECOUNT] += 1
 
+        asyncio.get_event_loop().create_task(rogue_routine(0,
+                                                           self.manager.random_edge_square(self.manager.random_car),
+                                                           self.manager.random_square(self.manager.random_car),
+                                                           self.manager))
+
     async def retry(self, now, oldlot):
         now = time.time()
 
@@ -617,24 +679,31 @@ class Car:
         poslong = start.long + (longdiff * progress)
         return float(poslat), float(poslong)
 
-    async def set_allocated_destination(self, lot):
+    async def set_allocated_destination(self, lot, now):
         self.aDestX = lot.location.latitude
         self.aDestY = lot.location.longitude
-        now = time.time()
+        # now = time.time()
 
-        if len(self.waypoints) > 1:
-            if self.waypoints[-2].time > now:
-                self.waypoints = self.waypoints[:-1]
+
 
         # cut the last waypoint short to car's current place and time
-        self.waypoints[-1].time = now
         lat, long = self.get_position(now)
-        self.waypoints[-1].lat = lat
-        self.waypoints[-1].long = long
+        add = get_route(wsmodels.Location(lat, long), lot.location, now, self.speed)
 
-        # newtime = now + (self.distance_to(self.aDestX, self.aDestY, now) / self.speed)
-        # self.waypoints.append(Waypoint(newtime, self.aDestX, self.aDestY))
-        self.waypoints += get_route(wsmodels.Location(lat, long), lot.location, self.waypoints[-1].time, self.speed)
+        if len(self.waypoints) > 1:
+            if self.waypoints[-2].time < now:
+                self.waypoints = self.waypoints[:-1]
+            else:
+                self.waypoints = self.waypoints[:-2]
+
+        self.waypoints += add
+
+        # self.waypoints[-1].time = now
+        #
+        # self.waypoints[-1].lat = lat
+        # self.waypoints[-1].long = long
+        #
+        # self.waypoints += get_route(wsmodels.Location(lat, long), lot.location, now, self.speed)
 
         attempt = Attempt(self.waypoints[-1].time, 20, self)
 
@@ -664,6 +733,8 @@ class Car:
         self.drawing = False
         self.finished = True
 
+        car_routine(0, self.manager.random_edge_square(self.manager.random_car), self)
+
     async def retry(self, now, oldlot):
         logger.info("too full for user")
         print("user found full space")
@@ -684,6 +755,15 @@ def get_route(start, end, now, speed):
 
         return [Waypoint(now + hoztime, end.latitude, start.longitude),
                 Waypoint(now + hoztime + vertime, end.latitude, end.longitude)]
+
+        # hozdist = geodistance(start.longitude, start.latitude, end.longitude, start.latitude)
+        # verdist = geodistance(end.longitude, start.latitude, end.longitude, end.latitude)
+        #
+        # hoztime = hozdist / speed
+        # vertime = verdist / speed
+        #
+        # return [Waypoint(now + hoztime, end.longitude, start.latitude),
+        #         Waypoint(now + hoztime + vertime, end.longitude, end.latitude)]
 
 
 def get_random_point(manager, rn):
@@ -797,7 +877,8 @@ async def car_routine(startt, start_loc, manager):
 
     if not manager.stop_flag:
         logger.info(f"allocation recieved: for car {car_id}: '{space._type}'")
-        await car.set_allocated_destination(space.lot)
+        now = time.time()
+        await car.set_allocated_destination(space.lot, now)
 
         await cli.send_parking_acceptance(space.lot.id)
         x, y = car.get_position(time.time())
@@ -832,7 +913,8 @@ async def car_routine(startt, start_loc, manager):
 
             if not manager.stop_flag:
                 logger.info(f"allocation recieved: for car {car_id}: '{space._type}'")
-                await car.set_allocated_destination(space.lot)
+                now = time.time()
+                await car.set_allocated_destination(space.lot, now)
 
                 await cli.send_parking_acceptance(space.lot.id)
         logger.info(f'<Car {car_id}>: heartbeat ** send location')
@@ -882,3 +964,8 @@ async def attempt_routine(delay, car, plot: ParkingLot, duration):
             await car.retry(now, plot)
     else:
         print("expired attempt")
+
+
+async def dump_stats(manager, delay):
+    await asyncio.sleep(delay)
+    print(manager.stats)
