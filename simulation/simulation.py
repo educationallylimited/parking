@@ -159,7 +159,7 @@ class SimManager:
                 now = time.time()
 
                 for car in self.cars:
-                    if car.drawing:
+                    if car.drawing and not car.finished:
                         x, y = self.loc_to_point(wsmodels.Location(*car.get_position(now)))
                         if car.reallocated:
                             fill = "red"
@@ -386,9 +386,10 @@ class RogueCar:
         self.tried = []
         self.manager = manager
         self.first_attempt = None
+        self.targetid = None
 
         closeness = 250
-        self.speed = 60
+        self.speed = 20
         stupidity = 0.5
 
         self.waypoints.append(Waypoint(starttime, self.startX, self.startY))
@@ -447,6 +448,7 @@ class RogueCar:
         attempt = Attempt(self.waypoints[-1].time, 20, self)
         self.first_attempt = attempt
         self.tried.append(bestLot)
+        self.targetid = bestLot.lot.id
 
     def get_position(self, now):
         endTime = 0
@@ -535,6 +537,7 @@ class RogueCar:
         self.waypoints += get_route(rp, bestLot.lot.location, self.waypoints[-1].time, self.speed)
         # attempt = Attempt(arrival, 20, self)
         attempt = Attempt(self.waypoints[-1].time, 20, self)
+        self.targetid = bestLot.lot.id
         await bestLot.register(attempt)
 
 
@@ -547,14 +550,14 @@ class Car:
         self.aDestX = 0
         self.aDestY = 0
         self.drawing = False
-        self.speed = 60  # this is in ms^-1
+        self.speed = 20  # this is in ms^-1
         self.waypoints = []
         self.waypoints.append(Waypoint(time.time(), self.lat, self.long))
         self.manager = manager
         self.cli = cli
         self.finished = False
         self.reallocated = False
-        self.targetlotid = None
+        self.targetid = None
 
     def distance_to(self, x, y, now):
         lat, long = self.get_position(now)
@@ -608,6 +611,10 @@ class Car:
         self.aDestY = lot.location.longitude
         now = time.time()
 
+        if len(self.waypoints) > 1:
+            if self.waypoints[-2].time > now:
+                self.waypoints = self.waypoints[:-1]
+
         # cut the last waypoint short to car's current place and time
         self.waypoints[-1].time = now
         lat, long = self.get_position(now)
@@ -620,7 +627,7 @@ class Car:
 
         attempt = Attempt(self.waypoints[-1].time, 20, self)
 
-        self.targetlotid = lot.id
+        self.targetid = lot.id
 
         await self.manager.lotdict[lot.id].register(attempt)
 
@@ -845,13 +852,16 @@ async def rogue_routine(startt, loc, dest, manager):
 
 async def attempt_routine(delay, car, plot: ParkingLot, duration):
     await asyncio.sleep(delay)
-    car.drawing = False
-    success = await plot.fill_space()
-    now = time.time()
-    if success:
-        car.park()
-        await asyncio.sleep(duration)
-        await plot.free_space()
+    if car.targetid == plot.lot.id:
+        car.drawing = False
+        success = await plot.fill_space()
+        now = time.time()
+        if success:
+            car.park()
+            await asyncio.sleep(duration)
+            await plot.free_space()
+        else:
+            car.drawing = True
+            await car.retry(now, plot)
     else:
-        car.drawing = True
-        await car.retry(now, plot)
+        print("expired attempt")
