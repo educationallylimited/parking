@@ -120,7 +120,7 @@ class SimManager:
             self.rogue_tasks.append(asyncio.ensure_future(rogue_routine(rogue_start + i, loc, dest, self)))
 
         self.tasks = self.space_tasks + self.car_tasks + self.rogue_tasks
-        self.tasks.append(dump_stats(self, 30))
+        self.tasks.append(dump_stats(self, 300))
         self.run_task = None
 
     def point_to_location(self, x: float, y: float) -> wsmodels.Location:
@@ -733,7 +733,9 @@ class Car:
         self.drawing = False
         self.finished = True
 
-        car_routine(0, self.manager.random_edge_square(self.manager.random_car), self)
+        asyncio.get_event_loop().create_task(car_routine(0,
+                                                         self.manager.random_edge_square(self.manager.random_car),
+                                                         self.manager))
 
     async def retry(self, now, oldlot):
         logger.info("too full for user")
