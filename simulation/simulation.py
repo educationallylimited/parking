@@ -41,17 +41,19 @@ class SimManager:
         self.stats[Stats.ROGUECOUNT] = 0
         self.stats[Stats.USERCOUNT] = 0
         self.stats[Stats.ROGUEPARKTIMEAVG] = 0
+        self.stats[Stats.USERPARKTIMEAVG] = 0
         self.stats[Stats.FIRSTROGUESTARTTIME] = None
         self.stats[Stats.ROGUERETRY] = [0]
         self.stats[Stats.LOTUTILITY] = [0]
         self.stats[Stats.SPACECOUNT] = 0
         self.stats[Stats.AVGROGUEDIST] = 0
         self.stats[Stats.AVGUSERDIST] = 0
+        self.stats[Stats.MAXPARKTIME] = 60
         self.graphs = []
-        self.graphs.append(BarGraph(self, [Stats.AVGUSERDIST, Stats.AVGROGUEDIST],
-                                    geodistance(0, 0, width/SCALE, height/SCALE),
-                                    "Average distance for\n  users   rogues", ""))
-        self.graphs.append(LineGraph(self, [Stats.LOTUTILITY], Stats.SPACECOUNT, "Lot utility (%)", ""))
+        self.graphs.append(BarGraph(self, [Stats.USERPARKTIMEAVG, Stats.ROGUEPARKTIMEAVG],
+                                    Stats.MAXPARKTIME,
+                                    "Average time taken for\n   users      non users", "", ""))
+        self.graphs.append(LineGraph(self, [Stats.LOTUTILITY], Stats.SPACECOUNT, "Lot utility (%)", "100", "0"))
         self.retry_lock = asyncio.Lock()
 
         self.stop_future = asyncio.Future()
@@ -267,23 +269,25 @@ class Stats(Enum):
     SPACECOUNT = 9
     AVGUSERDIST = 10
     AVGROGUEDIST = 11
+    MAXPARKTIME = 12
 
 
 class Graph:
-    def __init__(self, manager, stats, ceiling, xlabel, ylabel):
+    def __init__(self, manager, stats, ceiling, xlabel, ylabeltop, ylabelbottom):
         self.manager = manager
         self.stats = stats
         self.ceiling = ceiling
         self.xlabel = xlabel
-        self.ylabel = ylabel
+        self.ylabeltop = ylabeltop
+        self.ylabelbottom = ylabelbottom
 
     def draw(self, canvas: tk.Canvas, top_left_x, top_left_y, bottom_right_x, bottom_right_y):
         pass
 
 
 class BarGraph(Graph):
-    def __init__(self, manager, stats, ceiling, xlabel, ylabel):
-        super().__init__(manager, stats, ceiling, xlabel, ylabel)
+    def __init__(self, manager, stats, ceiling, xlabel, ylabeltop, ylabelbottom):
+        super().__init__(manager, stats, ceiling, xlabel, ylabeltop, ylabelbottom)
 
     def draw(self, w: tk.Canvas, top_left_x, top_left_y, bottom_right_x, bottom_right_y):
         width = bottom_right_x - top_left_x
@@ -302,19 +306,23 @@ class BarGraph(Graph):
             else:
                 values.append(self.stats[s])
 
+        c = self.manager.stats[self.ceiling]
+
         for v in range(len(values)):
             value = self.manager.stats[values[v]]
             w.create_rectangle(v * segment + bar_gap + top_left_x,
-                               bottom_right_y - (height * value / self.ceiling),
+                               bottom_right_y - (height * value / c),
                                (v+1) * segment - bar_gap + top_left_x,
                                bottom_right_y, tags="graph")
 
         w.create_text(top_left_x + width * 0.5, bottom_right_y + height * 0.1, text=self.xlabel)
+        w.create_text(bottom_right_x + 20, top_left_y, text=self.ylabeltop)
+        w.create_text(bottom_right_x + 20, bottom_right_y, text=self.ylabelbottom)
 
 
 class LineGraph(Graph):
-    def __init__(self, manager, stats, ceiling, xlabel, ylabel):
-        super().__init__(manager, stats, ceiling, xlabel, ylabel)
+    def __init__(self, manager, stats, ceiling, xlabel, ylabeltop, ylabelbottom):
+        super().__init__(manager, stats, ceiling, xlabel, ylabeltop, ylabelbottom)
 
     def draw(self, w: tk.Canvas, top_left_x, top_left_y, bottom_right_x, bottom_right_y):
         width = bottom_right_x - top_left_x
@@ -343,6 +351,8 @@ class LineGraph(Graph):
                           tags="graph")
 
         w.create_text(top_left_x + width * 0.5, bottom_right_y + height * 0.1, text=self.xlabel)
+        w.create_text(bottom_right_x + 20, top_left_y, text=self.ylabeltop)
+        w.create_text(bottom_right_x + 20, bottom_right_y, text=self.ylabelbottom)
 
 
 class Waypoint:
@@ -558,6 +568,7 @@ class Car:
         self.finished = False
         self.reallocated = False
         self.targetid = None
+        self.starttime = time.time()
 
     def distance_to(self, x, y, now):
         lat, long = self.get_position(now)
@@ -634,15 +645,21 @@ class Car:
     def park(self):
         logger.info("successfully parked user")
         print("user successfully parked")
+        now = time.time()
 
-        meand = self.manager.stats[Stats.AVGROGUEDIST]
-        count = self.manager.stats[Stats.ROGUECOUNT]
+        meand = self.manager.stats[Stats.AVGUSERDIST]
+        count = self.manager.stats[Stats.USERCOUNT]
+        meant = self.manager.stats[Stats.USERPARKTIMEAVG]
 
+        newmeant = ((meant * count) + (now - self.starttime)) / (count + 1)
         newmeand = ((meand * count) + (geodistance(self.destX, self.destY,
                                                    self.aDestX, self.aDestY))) / (count + 1)
 
         self.manager.stats[Stats.AVGUSERDIST] = newmeand
         self.manager.stats[Stats.USERCOUNT] += 1
+        self.manager.stats[Stats.USERPARKTIMEAVG] = newmeant
+
+        now = time.time()
 
         self.drawing = False
         self.finished = True
