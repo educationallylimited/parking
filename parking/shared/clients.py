@@ -2,6 +2,7 @@ import asyncio
 import collections
 import json
 from six import string_types
+import logging
 
 from tornado import httpclient, websocket
 from tornado.concurrent import future_set_result_unless_cancelled
@@ -11,6 +12,8 @@ import parking.shared.ws_models as ws_models
 from parking.shared.util import serialize_model
 
 HEADERS = {'Content-Type': 'application/json; charset=UTF-8'}
+
+logger = logging.getLogger('shared client')
 
 
 class ParkingLotRest(object):
@@ -31,7 +34,11 @@ class ParkingLotRest(object):
         msgbody = serialize_model(rest_models.ParkingLotAvailableMessage(available))
         request = httpclient.HTTPRequest(f"{self.rest_url}/{lot_id}/available", body=msgbody, headers=HEADERS,
                                          method='POST')
-        await self.client.fetch(request)
+        try:
+            await self.client.fetch(request)
+        except httpclient.HTTPError:
+            logger.info("server error while updating lot availability for lot number " + str(lot_id))
+            raise
 
     async def update_price(self, lot_id: int, price: float):
         msgbody = serialize_model(rest_models.ParkingLotPriceMessage(price))
@@ -54,13 +61,14 @@ class CarWebsocket(object):
         self._receive_callbacks = receive_callbacks if receive_callbacks else {}
 
     @classmethod
-    async def create(cls, base_url, receive_callbacks=None):
-        return cls(await websocket.websocket_connect(base_url), receive_callbacks)
+    async def create(cls, base_url, receive_callbacks=None, user_id=''):
+        return cls(await websocket.websocket_connect(base_url + "/" + user_id), receive_callbacks)
 
     async def _send(self, message):
         if not isinstance(message, string_types):
             message = serialize_model(message)
         await self._ws.write_message(message)
+        logger.info("message sent: '{}'")  # .format(message._type))
 
     async def send_location(self, location: rest_models.Location):
         await self._send(ws_models.LocationUpdateMessage(location))
@@ -93,6 +101,8 @@ class CarWebsocket(object):
         future = asyncio.Future()
         if self._message_queue[message_type]:
             future_set_result_unless_cancelled(future, self._message_queue[message_type].popleft())
+            logger.debug("message recieved as expected: '{}'".format(message_type))
         else:
             self._waiting[message_type] = future
+            logger.debug("unexpected message received; expected: " + str(message_type))
         return future

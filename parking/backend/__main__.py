@@ -12,28 +12,33 @@ from parking.backend.user_server.session import UserSessions
 from parking.backend.user_server.wsserver import UserWSHandler
 
 
+def make_app(url: str, init_tables: bool = False, reset_tables: bool = False):
+    loop: AbstractEventLoop = tornado.ioloop.IOLoop.current().asyncio_loop
+    usessions: UserSessions = UserSessions()
+    dba: DbAccess = tornado.ioloop.IOLoop.current().run_sync(
+        lambda: DbAccess.create(url, loop=loop, init_tables=init_tables, reset_tables=reset_tables))
+    engine: AllocationEngine = AllocationEngine(dba, usessions)
+    app = tornado.web.Application([(r"/ws/(.*)", UserWSHandler, {'usessions': usessions, 'engine': engine}),
+                                   (r'/spaces', ParkingLotsCreationHandler, {'dba': dba}),
+                                   (r'/spaces/([0-9]+)', IndividualLotDeleteHandler, {'dba': dba}),
+                                   (r'/spaces/([0-9]+)/available', IndividualLotAvailableHandler,
+                                   {'dba': dba, 'engine': engine}),
+                                   (r'/spaces/([0-9]+)/price', IndividualLotPriceHandler, {'dba': dba})])
+    return app
+
+
+def make_and_run_app(url: str, init_tables: bool = False, reset_tables: bool = False):
+    app = make_app(url, init_tables=init_tables, reset_tables=reset_tables)
+    app.listen(8888)
+    tornado.ioloop.IOLoop.current().start()
+
+
 def main(temp_db: bool, db_url: str, reset_tables: bool):
-    def _main(url: str, _init_tables: bool = False, _reset_tables: bool = False):
-        loop: AbstractEventLoop = tornado.ioloop.IOLoop.current().asyncio_loop
-        usessions: UserSessions = UserSessions()
-        dba: DbAccess = tornado.ioloop.IOLoop.current().run_sync(
-            lambda: DbAccess.create(url, loop=loop, init_tables=_init_tables, reset_tables=_reset_tables))
-        engine: AllocationEngine = AllocationEngine(dba, usessions)
-        app = tornado.web.Application([(r"/ws/(.*)", UserWSHandler, {'usessions': usessions, 'engine': engine}),
-                                       (r'/spaces', ParkingLotsCreationHandler, {'dba': dba}),
-                                       (r'/spaces/([0-9])+', IndividualLotDeleteHandler, {'dba': dba}),
-                                       (r'/spaces/([0-9])+/available', IndividualLotAvailableHandler,
-                                       {'dba': dba, 'engine': engine}),
-                                       (r'/spaces/([0-9])+/price', IndividualLotPriceHandler, {'dba': dba})])
-
-        app.listen(8888)
-        tornado.ioloop.IOLoop.current().start()
-
     if temp_db:
         with testing.postgresql.Postgresql() as postgresql:
-            _main(postgresql.url(), _init_tables=True)
+            make_and_run_app(postgresql.url(), init_tables=True)
     else:
-        _main(db_url, _reset_tables=reset_tables)
+        make_and_run_app(db_url, reset_tables=reset_tables)
 
 
 if __name__ == "__main__":
